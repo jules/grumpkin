@@ -1,5 +1,5 @@
 #[cfg(feature = "asm")]
-use halo2curves::bn256::assembly_field;
+use super::assembly::assembly_field;
 
 use crate::arithmetic::{adc, mac, sbb};
 use core::convert::TryInto;
@@ -104,10 +104,11 @@ const ZETA: Fr = Fr::from_raw([
     0x0u64,
 ]);
 
+#[cfg(not(feature = "asm"))]
+use halo2curves::{field_arithmetic, field_common, field_specific};
 use halo2curves::{
-    field_arithmetic, field_common, field_specific, impl_add_binop_specify_output,
-    impl_binops_additive, impl_binops_additive_specify_output, impl_binops_multiplicative,
-    impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
+    impl_add_binop_specify_output, impl_binops_additive, impl_binops_additive_specify_output,
+    impl_binops_multiplicative, impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
 };
 impl_binops_additive!(Fr, Fr);
 impl_binops_multiplicative!(Fr, Fr);
