@@ -59,13 +59,6 @@ const R3: Fr = Fr([
     0x20fd6e902d592544,
 ]);
 
-pub const NEGATIVE_ONE: Fr = Fr([
-    0x68c3488912edefaa,
-    0x8d087f6872aabf4f,
-    0x51e1a24709081231,
-    0x2259d6b14729c0fa,
-]);
-
 const MODULUS_STR: &str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47";
 
 const TWO_INV: Fr = Fr::from_raw([

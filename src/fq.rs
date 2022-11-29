@@ -62,6 +62,13 @@ const R3: Fq = Fq([
     0x0cf8594b7fcc657c,
 ]);
 
+pub const NEGATIVE_ONE: Fq = Fq([
+    0x43e1f593f0000000,
+    0x2833e84879b97091,
+    0xb85045b68181585d,
+    0x30644e72e131a029,
+]);
+
 /// `GENERATOR = 7 mod r` is a generator of the `r - 1` order multiplicative
 /// subgroup, or in other words a primitive root of the field.
 const GENERATOR: Fq = Fq::from_raw([0x07, 0x00, 0x00, 0x00]);
@@ -357,5 +364,11 @@ mod test {
                 0xaaaaaaaaaaaaaaaa
             ])
         );
+    }
+
+    #[test]
+    fn test_negative_one() {
+        let mut zero = Fq::zero();
+        println!("{:?}", zero - Fq::one());
     }
 }
