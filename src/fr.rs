@@ -229,7 +229,7 @@ impl ff::PrimeField for Fr {
 
     const NUM_BITS: u32 = 254;
     const CAPACITY: u32 = 253;
-    const S: u32 = 28;
+    const S: u32 = S;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fr([0, 0, 0, 0]);

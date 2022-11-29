@@ -2,13 +2,11 @@
 use halo2curves::bn256::assembly_field;
 
 use super::arithmetic::{adc, mac, sbb};
-use halo2curves::bn256::LegendreSymbol;
-use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
-
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::PrimeField;
+use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -140,6 +138,12 @@ assembly_field!(
     R2,
     R3
 );
+
+impl Fq {
+    pub const fn size() -> usize {
+        32
+    }
+}
 
 impl ff::Field for Fq {
     fn random(mut rng: impl RngCore) -> Self {
