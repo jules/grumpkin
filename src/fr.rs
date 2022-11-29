@@ -1,14 +1,13 @@
 #[cfg(feature = "asm")]
-use super::assembly::assembly_field;
+use halo2curves::bn256::assembly_field;
 
 use crate::arithmetic::{adc, mac, sbb};
-use halo2curves::bn256::LegendreSymbol;
-use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
-
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::PrimeField;
+use halo2curves::bn256::LegendreSymbol;
+use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -59,6 +58,22 @@ const R3: Fr = Fr([
     0x20fd6e902d592544,
 ]);
 
+/// `GENERATOR = 3 mod r` is a generator of the `r - 1` order multiplicative
+/// subgroup, or in other words a primitive root of the field.
+const GENERATOR: Fr = Fr::from_raw([0x03, 0x00, 0x00, 0x00]);
+
+/// GENERATOR^t where t * 2^s + 1 = r
+/// with t odd. In other words, this
+/// is a 2^s root of unity.
+const ROOT_OF_UNITY: Fr = Fr([
+    0x9e10460b6c3e7ea3,
+    0xcbc0b548b438e546,
+    0xdc2822db40c0ac2e,
+    0x183227397098d014,
+]);
+
+const S: u32 = 28;
+
 const MODULUS_STR: &str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47";
 
 const TWO_INV: Fr = Fr::from_raw([
@@ -68,11 +83,18 @@ const TWO_INV: Fr = Fr::from_raw([
     0x183227397098d014,
 ]);
 
-// Unused constant for base field
+/// 1 / ROOT_OF_UNITY mod r
 const ROOT_OF_UNITY_INV: Fr = Fr::zero();
 
-// Unused constant for base field
-const DELTA: Fr = Fr::zero();
+/// GENERATOR^{2^s} where t * 2^s + 1 = r
+/// with t odd. In other words, this
+/// is a t root of unity.
+const DELTA: Fr = Fr::from_raw([
+    0xa945f4766d02fffa,
+    0x925521d4769f9f48,
+    0xaaa1b4e1e5ce6975,
+    0x0c93291b6e66ca5a,
+]);
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
 const ZETA: Fr = Fr::from_raw([
@@ -147,10 +169,16 @@ impl Fr {
 
 impl ff::Field for Fr {
     fn random(mut rng: impl RngCore) -> Self {
-        let mut random_bytes = [0; 64];
-        rng.fill_bytes(&mut random_bytes[..]);
-
-        Self::from_bytes_wide(&random_bytes)
+        Self::from_u512([
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ])
     }
 
     fn zero() -> Self {
@@ -179,7 +207,7 @@ impl ff::Field for Fr {
             0x0c19139cb84c680a,
         ]);
 
-        CtOption::new(tmp, tmp.square().ct_eq(self))
+        CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -201,8 +229,7 @@ impl ff::PrimeField for Fr {
 
     const NUM_BITS: u32 = 254;
     const CAPACITY: u32 = 253;
-
-    const S: u32 = 0;
+    const S: u32 = 28;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fr([0, 0, 0, 0]);
@@ -254,15 +281,16 @@ impl ff::PrimeField for Fr {
     }
 
     fn multiplicative_generator() -> Self {
-        unimplemented!()
+        GENERATOR
     }
 
     fn root_of_unity() -> Self {
-        unimplemented!()
+        ROOT_OF_UNITY
     }
 }
 
 impl SqrtRatio for Fr {
+    /// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
     const T_MINUS1_OVER2: [u64; 4] = [0, 0, 0, 0];
 
     fn get_lower_32(&self) -> u32 {
@@ -283,7 +311,7 @@ mod test {
     use rand_core::OsRng;
 
     #[test]
-    fn test_sqrt_fq() {
+    fn test_sqrt() {
         let v = (Fr::TWO_INV).square().sqrt().unwrap();
         assert!(v == Fr::TWO_INV || (-v) == Fr::TWO_INV);
 
@@ -319,6 +347,20 @@ mod test {
     }
 
     #[test]
+    fn test_field() {
+        crate::tests::field::random_field_tests::<Fr>("bn256 scalar".to_string());
+    }
+
+    #[test]
+    fn test_delta() {
+        assert_eq!(Fr::DELTA, GENERATOR.pow(&[1u64 << Fr::S, 0, 0, 0]));
+        assert_eq!(
+            Fr::DELTA,
+            Fr::multiplicative_generator().pow(&[1u64 << Fr::S, 0, 0, 0])
+        );
+    }
+
+    #[test]
     fn test_from_u512() {
         assert_eq!(
             Fr::from_raw([
@@ -338,10 +380,5 @@ mod test {
                 0xaaaaaaaaaaaaaaaa
             ])
         );
-    }
-
-    #[test]
-    fn test_field() {
-        crate::tests::field::random_field_tests::<Fr>("fq".to_string());
     }
 }

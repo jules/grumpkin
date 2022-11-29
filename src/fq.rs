@@ -1,12 +1,14 @@
 #[cfg(feature = "asm")]
-use halo2curves::assembly::assembly_field;
+use halo2curves::bn256::assembly_field;
 
 use super::arithmetic::{adc, mac, sbb};
+use halo2curves::bn256::LegendreSymbol;
+use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
+
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::PrimeField;
-use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -14,8 +16,8 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 ///
 /// `r = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001`
 ///
-/// is the base field of the BN254 curve.
-// // The internal representation of this type is four 64-bit unsigned
+/// is the base field of the Grumpkin curve.
+// The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fq` values are always in
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
 #[derive(Clone, Copy, Eq)]
@@ -62,28 +64,15 @@ const R3: Fq = Fq([
     0x0cf8594b7fcc657c,
 ]);
 
+/// `GENERATOR = 7 mod r` is a generator of the `r - 1` order multiplicative
+/// subgroup, or in other words a primitive root of the field.
+const GENERATOR: Fq = Fq::from_raw([0x07, 0x00, 0x00, 0x00]);
+
 pub const NEGATIVE_ONE: Fq = Fq([
     0x43e1f593f0000000,
     0x2833e84879b97091,
     0xb85045b68181585d,
     0x30644e72e131a029,
-]);
-
-/// `GENERATOR = 7 mod r` is a generator of the `r - 1` order multiplicative
-/// subgroup, or in other words a primitive root of the field.
-const GENERATOR: Fq = Fq::from_raw([0x07, 0x00, 0x00, 0x00]);
-
-const S: u32 = 28;
-
-/// GENERATOR^t where t * 2^s + 1 = r
-/// with t odd. In other words, this
-/// is a 2^s root of unity.
-/// `0x3ddb9f5166d18b798865ea93dd31f743215cf6dd39329c8d34f1ed960c37c9c`
-const ROOT_OF_UNITY: Fq = Fq::from_raw([
-    0xd34f1ed960c37c9c,
-    0x3215cf6dd39329c8,
-    0x98865ea93dd31f74,
-    0x03ddb9f5166d18b7,
 ]);
 
 /// 1 / 2 mod r
@@ -94,24 +83,17 @@ const TWO_INV: Fq = Fq::from_raw([
     0x183227397098d014,
 ]);
 
-/// 1 / ROOT_OF_UNITY mod r
-const ROOT_OF_UNITY_INV: Fq = Fq::from_raw([
-    0x0ed3e50a414e6dba,
-    0xb22625f59115aba7,
-    0x1bbe587180f34361,
-    0x048127174daabc26,
+const ROOT_OF_UNITY: Fq = Fq::from_raw([
+    0xd34f1ed960c37c9c,
+    0x3215cf6dd39329c8,
+    0x98865ea93dd31f74,
+    0x03ddb9f5166d18b7,
 ]);
 
-/// GENERATOR^{2^s} where t * 2^s + 1 = r
-/// with t odd. In other words, this
-/// is a t root of unity.
-// 0x09226b6e22c6f0ca64ec26aad4c86e715b5f898e5e963f25870e56bbe533e9a2
-const DELTA: Fq = Fq::from_raw([
-    0x870e56bbe533e9a2,
-    0x5b5f898e5e963f25,
-    0x64ec26aad4c86e71,
-    0x09226b6e22c6f0ca,
-]);
+const ROOT_OF_UNITY_INV: Fq = Fq::zero();
+
+// Unused constant for base field
+const DELTA: Fq = Fq::zero();
 
 /// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
 const ZETA: Fq = Fq::from_raw([
@@ -161,16 +143,10 @@ assembly_field!(
 
 impl ff::Field for Fq {
     fn random(mut rng: impl RngCore) -> Self {
-        Self::from_u512([
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-            rng.next_u64(),
-        ])
+        let mut random_bytes = [0; 64];
+        rng.fill_bytes(&mut random_bytes[..]);
+
+        Self::from_bytes_wide(&random_bytes)
     }
 
     fn zero() -> Self {
@@ -214,7 +190,8 @@ impl ff::PrimeField for Fq {
 
     const NUM_BITS: u32 = 254;
     const CAPACITY: u32 = 253;
-    const S: u32 = S;
+
+    const S: u32 = 28;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fq([0, 0, 0, 0]);
@@ -274,7 +251,6 @@ impl ff::PrimeField for Fq {
 }
 
 impl SqrtRatio for Fq {
-    /// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
     const T_MINUS1_OVER2: [u64; 4] = [
         0xcdcb848a1f0fac9f,
         0x0c0ac2e9419f4243,
@@ -300,7 +276,7 @@ mod test {
     use rand_core::OsRng;
 
     #[test]
-    fn test_sqrt() {
+    fn test_sqrt_fq() {
         let v = (Fq::TWO_INV).square().sqrt().unwrap();
         assert!(v == Fq::TWO_INV || (-v) == Fq::TWO_INV);
 
@@ -322,25 +298,6 @@ mod test {
         assert_eq!(
             Fq::root_of_unity().pow_vartime(&[1 << Fq::S, 0, 0, 0]),
             Fq::one()
-        );
-    }
-
-    #[test]
-    fn test_inv_root_of_unity() {
-        assert_eq!(Fq::ROOT_OF_UNITY_INV, Fq::root_of_unity().invert().unwrap());
-    }
-
-    #[test]
-    fn test_field() {
-        crate::tests::field::random_field_tests::<Fq>("bn256 scalar".to_string());
-    }
-
-    #[test]
-    fn test_delta() {
-        assert_eq!(Fq::DELTA, GENERATOR.pow(&[1u64 << Fq::S, 0, 0, 0]));
-        assert_eq!(
-            Fq::DELTA,
-            Fq::multiplicative_generator().pow(&[1u64 << Fq::S, 0, 0, 0])
         );
     }
 
@@ -367,8 +324,7 @@ mod test {
     }
 
     #[test]
-    fn test_negative_one() {
-        let mut zero = Fq::zero();
-        println!("{:?}", zero - Fq::one());
+    fn test_field() {
+        crate::tests::field::random_field_tests::<Fq>("fq".to_string());
     }
 }
