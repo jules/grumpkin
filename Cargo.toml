@@ -1,7 +1,20 @@
 [package]
 name = "grumpkin"
 version = "0.1.0"
+authors = [ "Jules de Smit <julesdesmit@gmail.com>" ]
+license = "MIT/Apache-2.0"
 edition = "2021"
+repository = "https://github.com/julesdesmit/grumpkin"
+readme = "README.md"
+description = "Implementation of the Grumpkin curve in Rust, building off of the `halo2curves` library created by https://github.com/privacy-scaling-explorations"
 
 [dependencies]
+subtle = "2.4"
+ff = "0.12.0"
+group = "0.12.0"
+pasta_curves = "0.4.0"
+
 halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves" }
+
+[features]
+asm = ["halo2curves/asm"]
