@@ -88,6 +88,7 @@ const ROOT_OF_UNITY: Fq = Fq::from_raw([
     0x03ddb9f5166d18b7,
 ]);
 
+// Unused constant for base field
 const ROOT_OF_UNITY_INV: Fq = Fq::zero();
 
 // Unused constant for base field
