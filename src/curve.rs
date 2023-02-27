@@ -7,7 +7,7 @@ use core::ops::{Add, Mul, Neg, Sub};
 use ff::{Field, PrimeField};
 use group::Curve;
 use group::{prime::PrimeCurveAffine, Group as _, GroupEncoding};
-use halo2curves::{Coordinates, CurveAffine, CurveAffineExt, CurveExt, Group};
+use halo2curves::{Coordinates, CurveAffine, CurveAffineExt, CurveExt};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 

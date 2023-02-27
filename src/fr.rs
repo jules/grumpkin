@@ -1,13 +1,14 @@
 #[cfg(feature = "asm")]
-use super::assembly::assembly_field;
+use super::assembly::field_arithmetic_asm;
+#[cfg(not(feature = "asm"))]
+use halo2curves::{field_arithmetic, field_specific};
 
 use crate::arithmetic::{adc, mac, sbb};
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
-use ff::PrimeField;
+use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use halo2curves::bn256::LegendreSymbol;
-use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -19,7 +20,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fr` values are always in
 // Montgomery form; i.e., Fr(a) = aR mod r, with R = 2^256.
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Fr(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
@@ -104,15 +105,13 @@ const ZETA: Fr = Fr::from_raw([
     0x0u64,
 ]);
 
-#[cfg(not(feature = "asm"))]
-use halo2curves::{field_arithmetic, field_common, field_specific};
 use halo2curves::{
-    impl_add_binop_specify_output, impl_binops_additive, impl_binops_additive_specify_output,
-    impl_binops_multiplicative, impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
+    field_common, impl_add_binop_specify_output, impl_binops_additive,
+    impl_binops_additive_specify_output, impl_binops_multiplicative,
+    impl_binops_multiplicative_mixed, impl_sub_binop_specify_output, impl_sum_prod,
 };
 impl_binops_additive!(Fr, Fr);
 impl_binops_multiplicative!(Fr, Fr);
-#[cfg(not(feature = "asm"))]
 field_common!(
     Fr,
     MODULUS,
@@ -126,22 +125,11 @@ field_common!(
     R2,
     R3
 );
+impl_sum_prod!(Fr);
 #[cfg(not(feature = "asm"))]
 field_arithmetic!(Fr, MODULUS, INV, sparse);
 #[cfg(feature = "asm")]
-assembly_field!(
-    Fr,
-    MODULUS,
-    INV,
-    MODULUS_STR,
-    TWO_INV,
-    ROOT_OF_UNITY_INV,
-    DELTA,
-    ZETA,
-    R,
-    R2,
-    R3
-);
+field_arithmetic_asm!(Fr, MODULUS, INV);
 
 impl Fr {
     pub const fn size() -> usize {
@@ -182,13 +170,8 @@ impl ff::Field for Fr {
         ])
     }
 
-    fn zero() -> Self {
-        Self::zero()
-    }
-
-    fn one() -> Self {
-        Self::one()
-    }
+    const ZERO: Self = Self::zero();
+    const ONE: Self = Self::one();
 
     fn double(&self) -> Self {
         self.double()
@@ -211,6 +194,10 @@ impl ff::Field for Fr {
         CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
 
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        ff::helpers::sqrt_ratio_generic(num, div)
+    }
+
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
@@ -230,6 +217,12 @@ impl ff::PrimeField for Fr {
 
     const NUM_BITS: u32 = 254;
     const CAPACITY: u32 = 253;
+    const MODULUS: &'static str = MODULUS_STR;
+    const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
+    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
+    const ROOT_OF_UNITY_INV: Self = ROOT_OF_UNITY_INV;
+    const TWO_INV: Self = TWO_INV;
+    const DELTA: Self = DELTA;
     const S: u32 = S;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
@@ -266,7 +259,8 @@ impl ff::PrimeField for Fr {
             Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         #[cfg(not(feature = "asm"))]
-        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp =
+            Self::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -280,29 +274,27 @@ impl ff::PrimeField for Fr {
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
+}
 
-    fn multiplicative_generator() -> Self {
-        GENERATOR
-    }
-
-    fn root_of_unity() -> Self {
-        ROOT_OF_UNITY
+impl FromUniformBytes<64> for Fr {
+    /// Converts a 512-bit little endian integer into
+    /// an `Fr` by reducing by the modulus.
+    fn from_uniform_bytes(bytes: &[u8; 64]) -> Self {
+        Self::from_u512([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
+            u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+        ])
     }
 }
 
-impl SqrtRatio for Fr {
-    /// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
-    const T_MINUS1_OVER2: [u64; 4] = [0, 0, 0, 0];
-
-    fn get_lower_32(&self) -> u32 {
-        #[cfg(not(feature = "asm"))]
-        let tmp = Fr::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
-
-        #[cfg(feature = "asm")]
-        let tmp = Fr::montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]);
-
-        tmp.0[0] as u32
-    }
+impl WithSmallOrderMulGroup<3> for Fr {
+    const ZETA: Self = ZETA;
 }
 
 #[cfg(test)]
@@ -357,7 +349,7 @@ mod test {
         assert_eq!(Fr::DELTA, GENERATOR.pow(&[1u64 << Fr::S, 0, 0, 0]));
         assert_eq!(
             Fr::DELTA,
-            Fr::multiplicative_generator().pow(&[1u64 << Fr::S, 0, 0, 0])
+            Fr::MULTIPLICATIVE_GENERATOR.pow(&[1u64 << Fr::S, 0, 0, 0])
         );
     }
 
