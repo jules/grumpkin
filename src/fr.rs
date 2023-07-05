@@ -191,7 +191,7 @@ impl ff::Field for Fr {
             0x0c19139cb84c680a,
         ]);
 
-        CtOption::new(tmp, !self.ct_eq(&Self::zero()))
+        CtOption::new(tmp, tmp.square().ct_eq(self))
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
